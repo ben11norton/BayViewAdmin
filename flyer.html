@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bayview Laundry QR</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+:root {
+    --bg: #F0F2F7;
+    --surface: #FFFFFF;
+    --border: rgba(0,0,0,0.07);
+    --shadow: 0 8px 32px rgba(0,0,0,0.10), 0 2px 8px rgba(0,0,0,0.06);
+    --green: #00A878;
+    --text: #141820;
+    --text-mid: #4A5468;
+    --text-dim: #9AA3B5;
+    --sans: 'Space Grotesk', sans-serif;
+    --mono: 'IBM Plex Mono', monospace;
+}
+
+body {
+    background: var(--bg);
+    font-family: var(--sans);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding: 20px;
+}
+
+.card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    box-shadow: var(--shadow);
+    max-width: 420px;
+    width: 100%;
+    text-align: center;
+    padding: 36px 28px;
+}
+
+.logo {
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 20px;
+    border-radius: 18px;
+    background: linear-gradient(135deg,#00A878,#00C2A0);
+    display:flex;
+    justify-content:center;
+    align-items:center;
+}
+
+.logo svg{
+    width:34px;
+    height:34px;
+    stroke:white;
+}
+
+h1{
+    font-size:28px;
+    color:var(--text);
+    margin-bottom:8px;
+}
+
+.subtitle{
+    color:var(--text-mid);
+    line-height:1.6;
+    margin-bottom:30px;
+}
+
+.qr{
+    background:white;
+    border-radius:20px;
+    padding:18px;
+    display:inline-block;
+    border:1px solid var(--border);
+}
+
+.qr img{
+    display:block;
+    width:240px;
+    height:240px;
+}
+
+.url{
+    margin-top:24px;
+    font-family:var(--mono);
+    color:var(--green);
+    font-size:13px;
+    word-break:break-all;
+}
+
+.footer{
+    margin-top:18px;
+    color:var(--text-dim);
+    font-size:13px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="card">
+
+    <div class="logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="2" width="20" height="20" rx="3"/>
+            <circle cx="12" cy="13" r="5"/>
+            <circle cx="12" cy="13" r="2"/>
+            <line x1="7" y1="6" x2="7.01" y2="6" stroke-width="2.5"/>
+            <line x1="10" y1="6" x2="13" y2="6"/>
+        </svg>
+    </div>
+
+    <h1>Bayview Laundry</h1>
+
+    <p class="subtitle">
+        Scan the QR code to check live machine availability.
+    </p>
+
+    <div class="qr">
+        <img
+        src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=https://bayviewlaundry.netlify.app"
+        alt="Bayview Laundry QR Code">
+    </div>
+
+    <div class="url">
+        bayviewlaundry.netlify.app
+    </div>
+
+    <div class="footer">
+        No app required • Just scan with your phone camera
+    </div>
+
+</div>
+
+</body>
+</html>
