@@ -8,6 +8,7 @@
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -51,11 +52,14 @@
     }
     .header-left { display: flex; align-items: center; gap: 14px; }
     .logo-mark {
-      width: 36px; height: 36px; border-radius: 10px;
-      background: linear-gradient(135deg, #00A878 0%, #00C2A0 100%);
+      width: 44px; height: 44px;
       display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+      position: relative;
     }
-    .logo-mark svg { width: 19px; height: 19px; }
+    .logo-mark canvas {
+      position: relative; z-index: 1;
+      filter: drop-shadow(0 6px 8px rgba(20,24,32,0.28)) drop-shadow(0 2px 3px rgba(20,24,32,0.18));
+    }
     .header-title { font-size: 16px; font-weight: 700; letter-spacing: -0.3px; color: var(--text); }
     .header-sub { font-size: 11px; color: var(--text-mid); margin-top: 1px; }
     .admin-badge {
@@ -211,13 +215,88 @@
       animation: spin 0.7s linear infinite;
     }
 
+    /* ── 3D Scene panel ── */
+    .scene-panel {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 18px; overflow: hidden; position: relative;
+      width: 100%; height: 560px;
+    }
+    .scene-canvas {
+      width: 100%; height: 100%; display: block;
+    }
+    .scene-legend {
+      position: absolute; bottom: 16px; left: 20px;
+      display: flex; gap: 16px; align-items: center;
+    }
+    .legend-item {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 11px; font-weight: 600; color: var(--text-mid);
+      font-family: var(--mono); letter-spacing: 0.04em;
+    }
+    .legend-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+    }
+    .scene-title {
+      position: absolute; top: 16px; left: 20px;
+      font-size: 14px; font-weight: 700; color: var(--text);
+      letter-spacing: -0.2px;
+    }
+    .scene-subtitle {
+      position: absolute; top: 38px; left: 20px;
+      font-size: 11px; color: var(--text-dim); font-family: var(--mono);
+    }
+
+    /* ── Mini floating machine cards (glassmorphic) ── */
+    .mini-card {
+      position: absolute; transform: translate(-50%, -100%);
+      pointer-events: none; z-index: 5;
+      background: rgba(255,255,255,0.72);
+      backdrop-filter: blur(10px) saturate(160%);
+      -webkit-backdrop-filter: blur(10px) saturate(160%);
+      border: 1px solid rgba(255,255,255,0.6);
+      border-radius: 10px;
+      padding: 6px 9px;
+      box-shadow: 0 4px 14px rgba(20,24,32,0.10), 0 1px 3px rgba(20,24,32,0.06);
+      min-width: 76px;
+      transition: left 0.05s linear, top 0.05s linear;
+    }
+    .mini-card-row {
+      display: flex; align-items: center; gap: 5px;
+      white-space: nowrap;
+    }
+    .mini-card-dot {
+      width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+    }
+    .mini-card-label {
+      font-family: var(--mono); font-size: 9px; font-weight: 600;
+      color: var(--text); letter-spacing: 0.02em;
+    }
+    .mini-card-status {
+      font-family: var(--sans); font-size: 9px; font-weight: 600;
+      margin-left: auto; padding-left: 6px;
+    }
+    .mini-card-timer {
+      font-family: var(--mono); font-size: 11px; font-weight: 600;
+      margin-top: 2px; letter-spacing: -0.2px;
+    }
+    .mini-card.mini-available .mini-card-dot { background: var(--green); }
+    .mini-card.mini-available .mini-card-status { color: var(--green); }
+    .mini-card.mini-inuse .mini-card-dot { background: var(--red); animation: blink 1.2s ease-in-out infinite; }
+    .mini-card.mini-inuse .mini-card-status { color: var(--red); }
+    .mini-card.mini-inuse .mini-card-timer { color: var(--red); }
+    .mini-card.mini-ooo .mini-card-dot { background: var(--amber); }
+    .mini-card.mini-ooo .mini-card-status { color: var(--amber); }
+    @keyframes blink { 0%,100%{opacity:1;} 50%{opacity:0.25;} }
+
     @media (max-width: 760px) {
       .stats-grid { grid-template-columns: repeat(2, 1fr); }
       .mid-row { grid-template-columns: 1fr; }
       .main { padding: 16px; gap: 20px; }
       .header { padding: 16px; }
+      .scene-panel { height: 420px; }
     }
     @media (max-width: 480px) {
+      .scene-panel { height: 360px; }
       .stats-grid { grid-template-columns: 1fr 1fr; }
     }
   </style>
@@ -284,6 +363,527 @@ function avgRating(feedbacks) {
   return (rated.reduce((a, b) => a + b.rating, 0) / rated.length).toFixed(1);
 }
 
+// ── 3D Laundry Room Scene ──
+function LaundryScene({ machineState }) {
+  const mountRef = React.useRef(null);
+  const sceneRef = React.useRef({});
+  const [cardPositions, setCardPositions] = useState({});
+
+  // Machine layout: [id, col, row]  — two washers top, two dryers bottom
+  const LAYOUT = [
+    { id: 'wm1', label: 'WM1', col: 0, row: 0 },
+    { id: 'wm2', label: 'WM2', col: 1, row: 0 },
+    { id: 'td1', label: 'TD1', col: 0, row: 1 },
+    { id: 'td2', label: 'TD2', col: 1, row: 1 },
+  ];
+
+  const STATUS_COLORS = {
+    available:    0x00A878,
+    'in-use':     0xE8354A,
+    'out-of-order': 0xD97706,
+  };
+  const GLOW_COLORS = {
+    available:    0x00C48C,
+    'in-use':     0xFF4560,
+    'out-of-order': 0xF5A623,
+  };
+
+  function getStatus(id) {
+    if (!machineState || !machineState[id]) return 'available';
+    const d = machineState[id];
+    if (d.status === 'out-of-order') return 'out-of-order';
+    if (d.status === 'in-use' && d.endsAt && d.endsAt > Date.now()) return 'in-use';
+    return 'available';
+  }
+
+  useEffect(() => {
+    const el = mountRef.current;
+    if (!el) return;
+    const THREE = window.THREE;
+
+    // Guard against a zero-size mount (can happen on first mobile layout pass)
+    const getSize = () => {
+      const w = el.clientWidth  || el.parentElement?.clientWidth  || 320;
+      const h = el.clientHeight || el.parentElement?.clientHeight || 360;
+      return { w, h };
+    };
+    const { w: W, h: H } = getSize();
+
+    // ── Renderer ──
+    const renderer = new THREE.WebGLRenderer({ canvas: el, antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(W, H, false);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.setClearColor(0xFFFFFF, 0);
+
+    // ── Scene ──
+    const scene = new THREE.Scene();
+
+    // ── Isometric camera ──
+    const aspect = W / H;
+    const d = 6.2;
+    const camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, 0.1, 100);
+    // Orbit the camera around the room by 45° so we look down the aisle
+    // instead of from the corner, while keeping the same isometric angle/distance
+    const camRadius = Math.sqrt(8*8 + 8*8);
+    const camAngle  = Math.PI / 4; // rotate 45°
+    camera.position.set(camRadius * Math.sin(camAngle), 10, camRadius * Math.cos(camAngle));
+    camera.lookAt(0, 0, 0);
+
+    // ── Lights ──
+    const ambient = new THREE.AmbientLight(0xffffff, 0.55);
+    scene.add(ambient);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+    dirLight.position.set(6, 12, 8);
+    dirLight.castShadow = true;
+    dirLight.shadow.camera.near = 0.1;
+    dirLight.shadow.camera.far = 60;
+    dirLight.shadow.camera.left = -10;
+    dirLight.shadow.camera.right = 10;
+    dirLight.shadow.camera.top = 10;
+    dirLight.shadow.camera.bottom = -10;
+    dirLight.shadow.mapSize.set(1024, 1024);
+    scene.add(dirLight);
+
+    const fillLight = new THREE.DirectionalLight(0xdde8ff, 0.3);
+    fillLight.position.set(-5, 5, -5);
+    scene.add(fillLight);
+
+    // ── Floor ──
+    const floorGeo = new THREE.PlaneGeometry(7, 6.6);
+    const floorMat = new THREE.MeshLambertMaterial({ color: 0xF0F2F7 });
+    const floor = new THREE.Mesh(floorGeo, floorMat);
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.set(0.5, 0, 0.2);
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    // Floor tile grid lines
+    const tileSize = 0.9;
+    const lineMat = new THREE.LineBasicMaterial({ color: 0xDDE0EB, transparent: true, opacity: 0.6 });
+    for (let x = -3; x <= 4; x++) {
+      const geo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(x * tileSize, 0.002, -3.2),
+        new THREE.Vector3(x * tileSize, 0.002,  3.6),
+      ]);
+      scene.add(new THREE.Line(geo, lineMat));
+    }
+    for (let z = -4; z <= 4; z++) {
+      const geo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(-3.0, 0.002, z * tileSize),
+        new THREE.Vector3( 4.0, 0.002, z * tileSize),
+      ]);
+      scene.add(new THREE.Line(geo, lineMat));
+    }
+
+    // ── Back walls ──
+    const wallMat = new THREE.MeshLambertMaterial({ color: 0xE8EAF0 });
+    // back wall
+    const backWall = new THREE.Mesh(new THREE.BoxGeometry(7, 2.2, 0.12), wallMat);
+    backWall.position.set(0.5, 1.1, -3.25);
+    backWall.receiveShadow = true;
+    scene.add(backWall);
+    // left wall
+    const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.12, 2.2, 6.8), wallMat);
+    leftWall.position.set(-3.0, 1.1, 0.2);
+    leftWall.receiveShadow = true;
+    scene.add(leftWall);
+
+    // ── Skirting boards ──
+    const skirtMat = new THREE.MeshLambertMaterial({ color: 0xD0D4E0 });
+    const skirtBack = new THREE.Mesh(new THREE.BoxGeometry(7, 0.12, 0.12), skirtMat);
+    skirtBack.position.set(0.5, 0.06, -3.19);
+    scene.add(skirtBack);
+    const skirtLeft = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 6.8), skirtMat);
+    skirtLeft.position.set(-2.94, 0.06, 0.2);
+    scene.add(skirtLeft);
+
+    // ── Laundry basket (decorative) ──
+    const basketMat = new THREE.MeshLambertMaterial({ color: 0xC8CEDC });
+    const basket = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.22, 0.52, 12), basketMat);
+    basket.position.set(2.5, 0.26, 2.7);
+    basket.castShadow = true;
+    scene.add(basket);
+    // basket rim
+    const rimMat = new THREE.MeshLambertMaterial({ color: 0xB0B8CC });
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.025, 6, 18), rimMat);
+    rim.rotation.x = Math.PI / 2;
+    rim.position.set(2.5, 0.52, 2.7);
+    scene.add(rim);
+
+    // ── Detergent bottles ──
+    const detMat = new THREE.MeshLambertMaterial({ color: 0x00A878 });
+    const det1 = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.35, 8), detMat);
+    det1.position.set(-2.5, 0.175, -2.8);
+    det1.castShadow = true;
+    scene.add(det1);
+    const detLidMat = new THREE.MeshLambertMaterial({ color: 0x007A58 });
+    const detLid = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.09, 0.06, 8), detLidMat);
+    detLid.position.set(-2.5, 0.38, -2.8);
+    scene.add(detLid);
+    const det2 = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.28, 8),
+      new THREE.MeshLambertMaterial({ color: 0x4F8EF7 }));
+    det2.position.set(-2.28, 0.14, -2.8);
+    det2.castShadow = true;
+    scene.add(det2);
+
+    // ── Build machines ──
+    const machines = {};
+
+    LAYOUT.forEach(({ id, col, row }) => {
+      const status = getStatus(id);
+      const color  = STATUS_COLORS[status];
+      const group  = new THREE.Group();
+
+      // Position: washers near back wall (z=-1.8), dryers pushed toward front edge (z=2.7)
+      const x = col === 0 ? -1.1 : 1.1;
+      const z = row === 0 ? -1.8 :  2.7;
+      group.position.set(x, 0, z);
+      // Dryers face the washers (rotate 180°)
+      if (row === 1) group.rotation.y = Math.PI;
+
+      // Body
+      const bodyMat = new THREE.MeshLambertMaterial({ color: 0xF7F8FC });
+      const body = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.0, 1.2), bodyMat);
+      body.position.y = 0.5;
+      body.castShadow = true;
+      body.receiveShadow = true;
+      group.add(body);
+
+      // Top panel (slightly darker)
+      const topMat = new THREE.MeshLambertMaterial({ color: 0xECEEF5 });
+      const top = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.06, 1.2), topMat);
+      top.position.y = 1.03;
+      group.add(top);
+
+      // Front face colour strip
+      const stripMat = new THREE.MeshLambertMaterial({ color });
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.07, 0.02), stripMat);
+      strip.position.set(0, 0.97, 0.61);
+      group.add(strip);
+
+      // Door porthole (circle approximated by cylinder)
+      const doorRingMat = new THREE.MeshLambertMaterial({ color: 0xD0D4DF });
+      const doorRing = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.04, 24), doorRingMat);
+      doorRing.rotation.x = Math.PI / 2;
+      doorRing.position.set(0, 0.48, 0.62);
+      group.add(doorRing);
+
+      // Drum (inner spinning part)
+      const drumMat = new THREE.MeshLambertMaterial({ color: 0xB8BDD0 });
+      const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.05, 20), drumMat);
+      drum.rotation.x = Math.PI / 2;
+      drum.position.set(0, 0.48, 0.635);
+      group.add(drum);
+
+      // Drum inner glow disc
+      const glowMat = new THREE.MeshLambertMaterial({ color: GLOW_COLORS[status], transparent: true, opacity: status === 'available' ? 0.35 : 0.75 });
+      const glowDisc = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.01, 20), glowMat);
+      glowDisc.rotation.x = Math.PI / 2;
+      glowDisc.position.set(0, 0.48, 0.645);
+      group.add(glowDisc);
+
+      // Control panel buttons (top right of front face)
+      const btnColors = [0x00A878, 0x4F8EF7, 0xD97706];
+      btnColors.forEach((bc, bi) => {
+        const btn = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.04, 0.04, 0.02, 8),
+          new THREE.MeshLambertMaterial({ color: bc })
+        );
+        btn.rotation.x = Math.PI / 2;
+        btn.position.set(0.42 - bi * 0.14, 0.78, 0.615);
+        group.add(btn);
+      });
+
+      // Status indicator LED
+      const ledMat = new THREE.MeshLambertMaterial({ color: GLOW_COLORS[status], emissive: GLOW_COLORS[status], emissiveIntensity: 0.8 });
+      const led = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 8), ledMat);
+      led.position.set(-0.45, 0.82, 0.615);
+      group.add(led);
+
+      // Point light for glow effect
+      const pointLight = new THREE.PointLight(GLOW_COLORS[status], status === 'in-use' ? 0.8 : 0.2, 2.5);
+      pointLight.position.set(0, 0.5, 0.8);
+      group.add(pointLight);
+
+      // Anchor point above the machine for the floating status card
+      const cardAnchor = new THREE.Object3D();
+      cardAnchor.position.set(0, 1.55, 0);
+      group.add(cardAnchor);
+
+      scene.add(group);
+      machines[id] = { group, drum, glowDisc, led, ledMat, glowMat, stripMat, strip, pointLight, status, cardAnchor };
+    });
+
+    // Store refs
+    sceneRef.current = { renderer, scene, camera, machines };
+
+    // ── Animation loop ──
+    let frameId;
+    let t = 0;
+    let lastProjUpdate = 0;
+    function animate() {
+      frameId = requestAnimationFrame(animate);
+      t += 0.016;
+
+      Object.entries(machines).forEach(([id, m]) => {
+        if (m.status === 'in-use') {
+          // Spin drum
+          m.drum.rotation.z += 0.04;
+          m.glowDisc.rotation.z += 0.04;
+          // Pulse point light
+          m.pointLight.intensity = 0.6 + Math.sin(t * 3) * 0.3;
+          // Pulse LED
+          m.ledMat.emissiveIntensity = 0.6 + Math.sin(t * 4) * 0.4;
+        } else if (m.status === 'out-of-order') {
+          // Slow amber pulse
+          m.pointLight.intensity = 0.15 + Math.sin(t * 1.5) * 0.1;
+          m.ledMat.emissiveIntensity = 0.4 + Math.sin(t * 2) * 0.3;
+        }
+      });
+
+      renderer.render(scene, camera);
+
+      // Project card anchors to screen space (throttled to ~20fps for perf)
+      if (t - lastProjUpdate > 0.05) {
+        lastProjUpdate = t;
+        const rect = el.getBoundingClientRect();
+        const positions = {};
+        Object.entries(machines).forEach(([id, m]) => {
+          const worldPos = new THREE.Vector3();
+          m.cardAnchor.getWorldPosition(worldPos);
+          const projected = worldPos.clone().project(camera);
+          positions[id] = {
+            x: (projected.x * 0.5 + 0.5) * rect.width,
+            y: (-projected.y * 0.5 + 0.5) * rect.height,
+          };
+        });
+        setCardPositions(positions);
+      }
+    }
+    animate();
+
+    // Resize handler — ResizeObserver catches container size changes
+    // (orientation change, breakpoint shifts, card resize) more reliably than
+    // window resize alone, which can miss layout shifts on mobile.
+    function onResize() {
+      const { w, h } = getSize();
+      if (w === 0 || h === 0) return;
+      const asp = w / h;
+      camera.left = -d * asp; camera.right = d * asp;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h, false);
+    }
+    const resizeObserver = new ResizeObserver(onResize);
+    resizeObserver.observe(el);
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    // Re-check shortly after mount in case the initial layout pass raced us
+    const settleTimer = setTimeout(onResize, 150);
+
+    return () => {
+      cancelAnimationFrame(frameId);
+      clearTimeout(settleTimer);
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('orientationchange', onResize);
+      renderer.dispose();
+    };
+  }, []); // mount once
+
+  // Update machine colours/status reactively without rebuilding scene
+  useEffect(() => {
+    const { machines } = sceneRef.current;
+    if (!machines) return;
+    LAYOUT.forEach(({ id }) => {
+      const m = machines[id];
+      if (!m) return;
+      const status = getStatus(id);
+      if (status === m.status) return;
+      m.status = status;
+      const col  = STATUS_COLORS[status];
+      const glow = GLOW_COLORS[status];
+      m.stripMat.color.setHex(col);
+      m.glowMat.color.setHex(glow);
+      m.glowMat.opacity = status === 'available' ? 0.35 : 0.75;
+      m.ledMat.color.setHex(glow);
+      m.ledMat.emissive.setHex(glow);
+      m.pointLight.color.setHex(glow);
+      m.pointLight.intensity = status === 'in-use' ? 0.8 : 0.2;
+    });
+  }, [machineState]);
+
+  return (
+    <div className="scene-panel">
+      <canvas className="scene-canvas" ref={mountRef}/>
+      <div className="scene-title">Laundry Room</div>
+      <div className="scene-subtitle">Live view · read-only</div>
+      {LAYOUT.map(({ id, label }) => (
+        <MiniMachineCard
+          key={id}
+          label={label}
+          status={getStatus(id)}
+          data={machineState?.[id]}
+          pos={cardPositions[id]}
+        />
+      ))}
+      <div className="scene-legend">
+        <div className="legend-item"><div className="legend-dot" style={{background:'#00A878'}}/> Free</div>
+        <div className="legend-item"><div className="legend-dot" style={{background:'#E8354A'}}/> In use</div>
+        <div className="legend-item"><div className="legend-dot" style={{background:'#D97706'}}/> Out of order</div>
+      </div>
+    </div>
+  );
+}
+
+// ── Mini floating status card (glassmorphic, mirrors the laundry app cards) ──
+function MiniMachineCard({ label, status, data, pos }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  if (!pos) return null;
+
+  const remaining = data?.endsAt ? Math.max(0, data.endsAt - now) : 0;
+  const fmtTime = ms => {
+    if (ms <= 0) return '0:00';
+    const s = Math.ceil(ms / 1000);
+    return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+  };
+
+  const STATUS_META = {
+    available:     { text: 'Free',         cls: 'mini-available' },
+    'in-use':      { text: 'In Use',       cls: 'mini-inuse' },
+    'out-of-order':{ text: 'Out of Order', cls: 'mini-ooo' },
+  };
+  const meta = STATUS_META[status];
+
+  return (
+    <div
+      className={`mini-card ${meta.cls}`}
+      style={{ left: pos.x, top: pos.y }}
+    >
+      <div className="mini-card-row">
+        <span className="mini-card-dot"/>
+        <span className="mini-card-label">{label}</span>
+        <span className="mini-card-status">{meta.text}</span>
+      </div>
+      {status === 'in-use' && (
+        <div className="mini-card-timer">{fmtTime(remaining)}</div>
+      )}
+    </div>
+  );
+}
+
+// ── Mini 3D washing machine icon for the header ──
+// Exact replica of the washer model + camera angle used in the room scene below, static (no spin).
+function HeaderMachineIcon() {
+  const mountRef = React.useRef(null);
+
+  useEffect(() => {
+    const el = mountRef.current;
+    if (!el) return;
+    const THREE = window.THREE;
+    const SIZE = 52;
+
+    const renderer = new THREE.WebGLRenderer({ canvas: el, antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(SIZE, SIZE, false);
+    renderer.setClearColor(0xFFFFFF, 0);
+
+    const scene = new THREE.Scene();
+
+    // Same isometric angle as the room scene (camera at (8,10,8) orbited 45°),
+    // just framed tightly on a single machine.
+    const d = 1.05;
+    const camera = new THREE.OrthographicCamera(-d, d, d, -d, 0.1, 20);
+    const camRadius = Math.sqrt(8*8 + 8*8);
+    const camAngle  = Math.PI / 4;
+    const dir = new THREE.Vector3(Math.sin(camAngle), 10 / camRadius, Math.cos(camAngle)).normalize();
+    camera.position.set(dir.x * 2.6, dir.y * 2.6, dir.z * 2.6);
+    camera.lookAt(0, 0.4, 0);
+
+    const ambient = new THREE.AmbientLight(0xffffff, 0.55);
+    scene.add(ambient);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+    dirLight.position.set(6, 12, 8);
+    scene.add(dirLight);
+    const fillLight = new THREE.DirectionalLight(0xdde8ff, 0.3);
+    fillLight.position.set(-5, 5, -5);
+    scene.add(fillLight);
+
+    // ── Exact replica of the room-scene washer (status: available / green) ──
+    const group = new THREE.Group();
+    scene.add(group);
+
+    const bodyMat = new THREE.MeshLambertMaterial({ color: 0xF7F8FC });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.0, 1.2), bodyMat);
+    body.position.y = 0.5;
+    group.add(body);
+
+    const topMat = new THREE.MeshLambertMaterial({ color: 0xECEEF5 });
+    const top = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.06, 1.2), topMat);
+    top.position.y = 1.03;
+    group.add(top);
+
+    const stripMat = new THREE.MeshLambertMaterial({ color: 0x00A878 });
+    const strip = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.07, 0.02), stripMat);
+    strip.position.set(0, 0.97, 0.61);
+    group.add(strip);
+
+    const doorRingMat = new THREE.MeshLambertMaterial({ color: 0xD0D4DF });
+    const doorRing = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.04, 24), doorRingMat);
+    doorRing.rotation.x = Math.PI / 2;
+    doorRing.position.set(0, 0.48, 0.62);
+    group.add(doorRing);
+
+    const drumMat = new THREE.MeshLambertMaterial({ color: 0xB8BDD0 });
+    const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.05, 20), drumMat);
+    drum.rotation.x = Math.PI / 2;
+    drum.position.set(0, 0.48, 0.635);
+    group.add(drum);
+
+    const glowMat = new THREE.MeshLambertMaterial({ color: 0x00C48C, transparent: true, opacity: 0.35 });
+    const glowDisc = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.01, 20), glowMat);
+    glowDisc.rotation.x = Math.PI / 2;
+    glowDisc.position.set(0, 0.48, 0.645);
+    group.add(glowDisc);
+
+    const btnColors = [0x00A878, 0x4F8EF7, 0xD97706];
+    btnColors.forEach((bc, bi) => {
+      const btn = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.04, 0.04, 0.02, 8),
+        new THREE.MeshLambertMaterial({ color: bc })
+      );
+      btn.rotation.x = Math.PI / 2;
+      btn.position.set(0.42 - bi * 0.14, 0.78, 0.615);
+      group.add(btn);
+    });
+
+    const ledMat = new THREE.MeshLambertMaterial({ color: 0x00C48C, emissive: 0x00C48C, emissiveIntensity: 0.8 });
+    const led = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 8), ledMat);
+    led.position.set(-0.45, 0.82, 0.615);
+    group.add(led);
+
+    // Static render — single frame, no animation loop needed
+    renderer.render(scene, camera);
+
+    return () => {
+      renderer.dispose();
+    };
+  }, []);
+
+  return (
+    <div className="logo-mark">
+      <canvas ref={mountRef} style={{ width: 52, height: 52, display: 'block' }}/>
+    </div>
+  );
+}
+
 // ── Main dashboard ──
 function Dashboard() {
   const [data,      setData]      = useState(null);
@@ -294,22 +894,23 @@ function Dashboard() {
   const load = useCallback(async () => {
     setSpinning(true);
     try {
-      const [totalsSnap, dailySnap, hourlySnap, feedbackSnap] = await Promise.all([
+      const [totalsSnap, dailySnap, hourlySnap, feedbackSnap, machinesSnap] = await Promise.all([
         fbGet(fbRef(fbDb, 'analytics/totals')),
         fbGet(fbRef(fbDb, 'analytics/daily')),
         fbGet(fbRef(fbDb, `analytics/hourly/${getTodayKey()}`)),
         fbGet(fbRef(fbDb, 'feedback')),
+        fbGet(fbRef(fbDb, 'machines')),
       ]);
 
-      const totals   = totalsSnap.exists()  ? totalsSnap.val()   : {};
-      const daily    = dailySnap.exists()   ? dailySnap.val()    : {};
-      const hourly   = hourlySnap.exists()  ? hourlySnap.val()   : {};
+      const totals   = totalsSnap.exists()   ? totalsSnap.val()   : {};
+      const daily    = dailySnap.exists()    ? dailySnap.val()    : {};
+      const hourly   = hourlySnap.exists()   ? hourlySnap.val()   : {};
       const rawFB    = feedbackSnap.exists() ? feedbackSnap.val() : {};
+      const machines = machinesSnap.exists() ? machinesSnap.val() : {};
 
-      // Feedbacks as sorted array (newest first)
       const feedbacks = Object.values(rawFB).sort((a, b) => b.ts - a.ts);
 
-      setData({ totals, daily, hourly, feedbacks });
+      setData({ totals, daily, hourly, feedbacks, machines });
       setLastSync(Date.now());
     } catch(e) {
       console.error(e);
@@ -325,14 +926,13 @@ function Dashboard() {
     <div className="loading-screen"><div className="spinner"/><span>Loading dashboard…</span></div>
   );
 
-  const { totals, daily, hourly, feedbacks } = data || {};
+  const { totals, daily, hourly, feedbacks, machines } = data || {};
   const days7  = getLast7Days();
+  // Bar chart sized against uniqueUsers
   const maxDay = Math.max(1, ...days7.map(d => daily?.[d.key]?.uniqueUsers || 0));
 
-  // Hourly heatmap for today
   const maxHour = Math.max(1, ...Array.from({length:24}, (_,i) => hourly?.[`h${i}`] || 0));
 
-  // Rating breakdown
   const ratingCounts = [5,4,3,2,1].map(r => ({
     r,
     count: feedbacks.filter(f => f.rating === r).length
@@ -340,10 +940,11 @@ function Dashboard() {
   const maxRatingCount = Math.max(1, ...ratingCounts.map(x => x.count));
   const avg = avgRating(feedbacks);
 
-  const todayVisits  = daily?.[getTodayKey()]?.uniqueUsers  || 0;
-  const todayCycles  = daily?.[getTodayKey()]?.cycles  || 0;
-  const totalVisits  = totals?.uniqueUsers  || 0;
-  const totalCycles  = totals?.cycles  || 0;
+  // Unique users instead of raw visits
+  const todayVisits  = daily?.[getTodayKey()]?.uniqueUsers || 0;
+  const todayCycles  = daily?.[getTodayKey()]?.cycles      || 0;
+  const totalVisits  = totals?.uniqueUsers || 0;
+  const totalCycles  = totals?.cycles      || 0;
 
   const syncStr = lastSync
     ? new Date(lastSync).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -353,20 +954,11 @@ function Dashboard() {
     <>
       <div className="header">
         <div className="header-left">
-          <div className="logo-mark">
-            <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="2" y="2" width="20" height="20" rx="3"/>
-              <circle cx="12" cy="13" r="5"/>
-              <circle cx="12" cy="13" r="2"/>
-              <line x1="7" y1="6" x2="7.01" y2="6" strokeWidth="2.5"/>
-              <line x1="10" y1="6" x2="13" y2="6"/>
-            </svg>
-          </div>
+          <HeaderMachineIcon/>
           <div>
             <div className="header-title">Bayview Laundry</div>
             <div className="header-sub">Admin dashboard</div>
           </div>
-          <div className="admin-badge">Admin</div>
         </div>
         <div className="header-right">
           <span className="last-sync">Synced {syncStr}</span>
@@ -385,17 +977,23 @@ function Dashboard() {
 
       <div className="main">
 
+        {/* ── 3D Scene ── */}
+        <div>
+          <div className="section-eyebrow">Live room view</div>
+          <LaundryScene machineState={machines}/>
+        </div>
+
         {/* ── Stats row ── */}
         <div>
           <div className="section-eyebrow">Overview</div>
           <div className="stats-grid">
             <div className="stat-card">
-              <div className="stat-label">Total users</div>
+              <div className="stat-label">Total visits</div>
               <div className="stat-value">{totalVisits}</div>
               <div className="stat-badge green">↑ All time</div>
             </div>
             <div className="stat-card">
-              <div className="stat-label">Today's users</div>
+              <div className="stat-label">Today's visits</div>
               <div className="stat-value">{todayVisits}</div>
               <div className="stat-badge blue">Today</div>
             </div>
@@ -415,7 +1013,7 @@ function Dashboard() {
         {/* ── Mid row: 7-day + today's heatmap ── */}
         <div className="mid-row">
           <div className="panel">
-            <div className="panel-title">Users — last 7 days</div>
+            <div className="panel-title">Visits — last 7 days</div>
             <div className="bar-chart">
               {days7.map(({ key, label }) => {
                 const v = daily?.[key]?.uniqueUsers || 0;
