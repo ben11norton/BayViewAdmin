@@ -324,32 +324,32 @@
 
     /* ── Ring timer card (glassmorphic, sits to the right of the mini card) ── */
     .ring-card {
-      position: absolute; transform: translate(0, -100%);
+      position: absolute; transform: translate(-50%, -100%);
       pointer-events: none; z-index: 5;
       background: rgba(255,255,255,0.72);
       backdrop-filter: blur(10px) saturate(160%);
       -webkit-backdrop-filter: blur(10px) saturate(160%);
       border: 1px solid rgba(255,255,255,0.6);
       border-radius: 10px;
-      padding: 5px 8px;
+      padding: 6px 9px;
       box-shadow: 0 4px 14px rgba(20,24,32,0.10), 0 1px 3px rgba(20,24,32,0.06);
       display: flex; align-items: center; gap: 6px;
       white-space: nowrap;
       transition: left 0.05s linear, top 0.05s linear;
     }
     .ring-card-ring {
-      position: relative; width: 36px; height: 36px; flex-shrink: 0;
+      position: relative; width: 29px; height: 29px; flex-shrink: 0;
     }
-    .ring-card-ring svg { transform: rotate(-90deg); }
-    .ring-card-bg { fill: none; stroke: rgba(232,53,74,0.12); stroke-width: 3; }
-    .ring-card-progress { fill: none; stroke: var(--red); stroke-width: 3; stroke-linecap: round; transition: stroke-dashoffset 1s linear; }
+    .ring-card-ring svg { transform: rotate(-90deg); display: block; }
+    .ring-card-bg { fill: none; stroke: rgba(232,53,74,0.12); stroke-width: 3.5; }
+    .ring-card-progress { fill: none; stroke: var(--red); stroke-width: 3.5; stroke-linecap: round; transition: stroke-dashoffset 1s linear; }
     .ring-card-pct {
       position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-      font-family: var(--mono); font-size: 8px; font-weight: 600; color: var(--red);
+      font-family: var(--mono); font-size: 7px; font-weight: 600; color: var(--red);
     }
     .ring-card-info { display: flex; flex-direction: column; gap: 1px; }
     .ring-card-label { font-size: 8px; color: var(--text-dim); }
-    .ring-card-value { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--text); letter-spacing: -0.2px; }
+    .ring-card-value { font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--text); letter-spacing: -0.2px; }
 
     @media (max-width: 760px) {
       .stats-grid { grid-template-columns: repeat(2, 1fr); }
@@ -993,7 +993,7 @@ function LaundryScene({ machineState }) {
           />
           <RingTimerCard
             data={machineState?.[id]}
-            pos={cardPositions[id] ? { x: cardPositions[id].x + 78, y: cardPositions[id].y } : null}
+            pos={cardPositions[id] ? { x: cardPositions[id].x, y: cardPositions[id].y - 34 } : null}
           />
         </React.Fragment>
       ))}
@@ -1074,7 +1074,7 @@ function RingTimerCard({ data, pos }) {
       style={{ left: pos.x, top: pos.y }}
     >
       <div className="ring-card-ring">
-        <svg width="36" height="36" viewBox="0 0 36 36">
+        <svg width="29" height="29" viewBox="0 0 36 36">
           <circle className="ring-card-bg" cx={cx} cy={cy} r={r}/>
           <circle className="ring-card-progress" cx={cx} cy={cy} r={r}
             strokeDasharray={circ} strokeDashoffset={circ * (1 - pct)}/>
