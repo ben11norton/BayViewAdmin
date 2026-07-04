@@ -69,19 +69,23 @@
       font-size: 11px; font-weight: 600; color: var(--green);
       font-family: var(--mono); letter-spacing: 0.06em; text-transform: uppercase;
     }
-    .header-right { display: flex; align-items: center; gap: 12px; }
+    .header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+    .live-badge {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--green); font-family: var(--mono);
+    }
+    .live-dot {
+      width: 7px; height: 7px; border-radius: 50%; background: var(--green);
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%,100% { box-shadow: 0 0 0 0 rgba(0,168,120,0.5); }
+      50%      { box-shadow: 0 0 0 5px rgba(0,168,120,0); }
+    }
     .last-sync {
-      font-family: var(--mono); font-size: 11px; color: var(--text-dim);
+      font-family: var(--mono); font-size: 10px; color: var(--text-dim);
     }
-    .refresh-btn {
-      width: 32px; height: 32px; border-radius: 9px;
-      background: var(--surface2); border: 1px solid var(--border);
-      display: flex; align-items: center; justify-content: center;
-      cursor: pointer; color: var(--text-mid); transition: color 0.15s, background 0.15s;
-    }
-    .refresh-btn:hover { color: var(--green); background: var(--surface3); }
-    .refresh-btn svg { width: 15px; height: 15px; }
-    .refresh-btn.spinning svg { animation: spin 0.7s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
     /* ── Layout ── */
@@ -380,16 +384,17 @@ const FIREBASE_CONFIG = {
   appId: "1:204674191712:web:f46ffa5b31e4c843198e05"
 };
 
-let fbDb, fbGet, fbRef;
+let fbDb, fbGet, fbRef, fbOnValue;
 
 async function initFirebase() {
   const { initializeApp, getApps } = await import("https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js");
   const db = await import("https://www.gstatic.com/firebasejs/12.15.0/firebase-database.js");
   const apps = getApps();
   const app = apps.length ? apps[0] : initializeApp(FIREBASE_CONFIG);
-  fbDb  = db.getDatabase(app);
-  fbGet = db.get;
-  fbRef = db.ref;
+  fbDb      = db.getDatabase(app);
+  fbGet     = db.get;
+  fbRef     = db.ref;
+  fbOnValue = db.onValue;
 }
 
 function getTodayKey() {
@@ -1196,47 +1201,46 @@ function HeaderMachineIcon() {
 
 // ── Main dashboard ──
 function Dashboard() {
-  const [data,      setData]      = useState(null);
-  const [loading,   setLoading]   = useState(true);
-  const [spinning,  setSpinning]  = useState(false);
-  const [lastSync,  setLastSync]  = useState(null);
+  const [data,       setData]       = useState({ totals: {}, daily: {}, hourlyAll: {}, feedbacks: [], machines: null });
+  const [loading,    setLoading]    = useState(true);
+  const [lastUpdate, setLastUpdate] = useState(null);
 
-  const load = useCallback(async () => {
-    setSpinning(true);
-    try {
-      const [totalsSnap, dailySnap, hourlySnap, feedbackSnap, machinesSnap] = await Promise.all([
-        fbGet(fbRef(fbDb, 'analytics/totals')),
-        fbGet(fbRef(fbDb, 'analytics/daily')),
-        fbGet(fbRef(fbDb, `analytics/hourly/${getTodayKey()}`)),
-        fbGet(fbRef(fbDb, 'feedback')),
-        fbGet(fbRef(fbDb, 'machines')),
-      ]);
+  // Live subscriptions — every panel updates the moment Firebase pushes new
+  // data, mirroring the resident app's onValue() pattern. No manual refresh.
+  useEffect(() => {
+    const unsubs = [];
 
-      const totals   = totalsSnap.exists()   ? totalsSnap.val()   : {};
-      const daily    = dailySnap.exists()    ? dailySnap.val()    : {};
-      const hourly   = hourlySnap.exists()   ? hourlySnap.val()   : {};
-      const rawFB    = feedbackSnap.exists() ? feedbackSnap.val() : {};
-      const machines = machinesSnap.exists() ? machinesSnap.val() : {};
+    const listen = (path, apply) => {
+      const unsubscribe = fbOnValue(fbRef(fbDb, path), snap => {
+        apply(snap.exists() ? snap.val() : null);
+        setLastUpdate(Date.now());
+      }, err => console.error(`Listener failed for ${path}`, err));
+      unsubs.push(unsubscribe);
+    };
 
-      const feedbacks = Object.values(rawFB).sort((a, b) => b.ts - a.ts);
-
-      setData({ totals, daily, hourly, feedbacks, machines });
-      setLastSync(Date.now());
-    } catch(e) {
-      console.error(e);
-    } finally {
+    listen('machines', v => {
+      setData(d => ({ ...d, machines: v || {} }));
       setLoading(false);
-      setSpinning(false);
-    }
-  }, []);
+    });
+    listen('analytics/totals', v => setData(d => ({ ...d, totals: v || {} })));
+    listen('analytics/daily',  v => setData(d => ({ ...d, daily:  v || {} })));
+    // Subscribe to the whole hourly node (tiny at this scale) so the listener
+    // survives the midnight date rollover without needing to re-attach.
+    listen('analytics/hourly', v => setData(d => ({ ...d, hourlyAll: v || {} })));
+    listen('feedback', v => setData(d => ({
+      ...d,
+      feedbacks: v ? Object.values(v).sort((a, b) => b.ts - a.ts) : [],
+    })));
 
-  useEffect(() => { load(); }, [load]);
+    return () => unsubs.forEach(fn => fn && fn());
+  }, []);
 
   if (loading) return (
     <div className="loading-screen"><div className="spinner"/><span>Loading dashboard…</span></div>
   );
 
-  const { totals, daily, hourly, feedbacks, machines } = data || {};
+  const { totals, daily, hourlyAll, feedbacks, machines } = data;
+  const hourly = hourlyAll?.[getTodayKey()] || {};
   const days7  = getLast7Days();
   // Bar chart sized against uniqueUsers
   const maxDay = Math.max(1, ...days7.map(d => daily?.[d.key]?.uniqueUsers || 0));
@@ -1256,8 +1260,8 @@ function Dashboard() {
   const totalVisits  = totals?.uniqueUsers || 0;
   const totalCycles  = totals?.cycles      || 0;
 
-  const syncStr = lastSync
-    ? new Date(lastSync).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  const updatedStr = lastUpdate
+    ? new Date(lastUpdate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     : '—';
 
   return (
@@ -1271,17 +1275,8 @@ function Dashboard() {
           </div>
         </div>
         <div className="header-right">
-          <span className="last-sync">Synced {syncStr}</span>
-          <div
-            className={`refresh-btn ${spinning ? 'spinning' : ''}`}
-            onClick={load}
-            title="Refresh"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="23 4 23 10 17 10"/>
-              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-            </svg>
-          </div>
+          <div className="live-badge"><span className="live-dot"/>Live</div>
+          <span className="last-sync">Updated {updatedStr}</span>
         </div>
       </div>
 
