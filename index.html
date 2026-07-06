@@ -800,7 +800,7 @@ function LaundryScene({ machineState }) {
     // ── Laundry basket (decorative) ──
     const basketMat = new THREE.MeshLambertMaterial({ color: 0xC8CEDC });
     const basket = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.22, 0.52, 12), basketMat);
-    basket.position.set(2.75, 0.26, 2.7);
+    basket.position.set(3.6, 0.26, 2.7);
     basket.castShadow = true;
     scene.add(basket);
     // basket rim
@@ -835,7 +835,7 @@ function LaundryScene({ machineState }) {
       const group  = new THREE.Group();
 
       // Position: washers near back wall (z=-1.8), dryers pushed toward front edge (z=2.7)
-      const x = col === 0 ? -1.1 : 1.7;
+      const x = col === 0 ? -1.1 : 2.5;
       const z = row === 0 ? -1.8 :  2.7;
       group.position.set(x, 0, z);
       // Dryers face the washers (rotate 180°)
