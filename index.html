@@ -228,6 +228,60 @@
       .users-panel .bar-row { animation: none; }
     }
 
+    /* ── Weekly history panel (column chart) ── */
+    .wk-chart {
+      display: flex; align-items: flex-end; gap: 8px;
+      height: 150px; margin-bottom: 8px;
+    }
+    .wk-col {
+      flex: 1; height: 100%;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: flex-end;
+      animation: user-rise 0.5s cubic-bezier(0.34, 1.4, 0.64, 1) backwards;
+    }
+    .wk-col:nth-child(1) { animation-delay: 0.04s; }
+    .wk-col:nth-child(2) { animation-delay: 0.08s; }
+    .wk-col:nth-child(3) { animation-delay: 0.12s; }
+    .wk-col:nth-child(4) { animation-delay: 0.16s; }
+    .wk-col:nth-child(5) { animation-delay: 0.20s; }
+    .wk-col:nth-child(6) { animation-delay: 0.24s; }
+    .wk-col:nth-child(7) { animation-delay: 0.28s; }
+    .wk-col:nth-child(8) { animation-delay: 0.32s; }
+    .wk-total {
+      font-family: var(--mono); font-size: 11px; color: var(--text-mid);
+      margin-bottom: 5px;
+    }
+    .wk-stack {
+      width: 100%; max-width: 26px;
+      display: flex; flex-direction: column;
+      border-radius: 6px; overflow: hidden;
+    }
+    .wk-new {
+      width: 100%;
+      background: linear-gradient(180deg, #00C48C, #00A878);
+      transition: height 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .wk-ret {
+      width: 100%; background: #C2C8D6;
+      transition: height 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .wk-col.now .wk-total { color: var(--green); font-weight: 500; }
+    .wk-col.now .wk-new,
+    .wk-col.now .wk-ret { opacity: 0.45; }
+    .wk-axis {
+      display: flex; gap: 8px;
+      border-top: 0.5px solid var(--border);
+      padding-top: 6px; margin-bottom: 14px;
+    }
+    .wk-axis span {
+      flex: 1; text-align: center;
+      font-family: var(--mono); font-size: 10px; color: var(--text-dim);
+      letter-spacing: 0.04em;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .wk-col { animation: none; }
+    }
+
     /* ── Bar chart ── */
     .bar-chart { display: flex; flex-direction: column; gap: 10px; }
     .bar-row { display: flex; align-items: center; gap: 12px; }
@@ -519,6 +573,37 @@ function avgRating(feedbacks) {
   return (rated.reduce((a, b) => a + b.rating, 0) / rated.length).toFixed(1);
 }
 
+// ── Weekly bucketing helpers ──
+// Parse a "YYYY-MM-DD" key into a local Date (avoids UTC offset surprises).
+function parseDateKey(key) {
+  const [y, m, d] = key.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+// Monday-start week key for a given Date, returned as the week's Monday "YYYY-MM-DD".
+function mondayKeyOf(date) {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const day = (d.getDay() + 6) % 7; // 0 = Monday … 6 = Sunday
+  d.setDate(d.getDate() - day);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+// Build the last N Monday-start weeks (oldest → newest), each with a short label.
+function getLastNWeeks(n) {
+  const weeks = [];
+  const thisMonday = parseDateKey(mondayKeyOf(new Date()));
+  for (let i = n - 1; i >= 0; i--) {
+    const wStart = new Date(thisMonday);
+    wStart.setDate(wStart.getDate() - i * 7);
+    const key = `${wStart.getFullYear()}-${String(wStart.getMonth()+1).padStart(2,'0')}-${String(wStart.getDate()).padStart(2,'0')}`;
+    // Friendly, unambiguous label: the week's Monday as "d MMM" (e.g. "29 Jun").
+    // Each column represents the Mon–Sun week beginning on that date.
+    const label = wStart.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    weeks.push({ key, start: wStart, label });
+  }
+  return weeks;
+}
+
 // ── 3D Laundry Room Scene ──
 function LaundryScene({ machineState }) {
   const mountRef = React.useRef(null);
@@ -649,47 +734,39 @@ function LaundryScene({ machineState }) {
     scene.add(leftWall);
 
     // ── Wall poster (real textured plane, mounted flush on the left wall) ──
-    // Drawn to a canvas (logo, title, QR, link) then applied as a texture so it
-    // sits at the true wall angle and looks physically part of the room.
     function makePosterTexture() {
       const c = document.createElement('canvas');
-      const S = 512;                 // high-res for crisp text
+      const S = 512;
       c.width = S; c.height = Math.round(S * 1.3);
       const ctx = c.getContext('2d');
       const W = c.width, H = c.height;
 
-      // Card background
       ctx.fillStyle = '#FFFFFF';
       ctx.fillRect(0, 0, W, H);
       ctx.strokeStyle = '#E3E6EF';
       ctx.lineWidth = 6;
       ctx.strokeRect(3, 3, W - 6, H - 6);
 
-      // Logo tile
       const tileX = W/2 - 46, tileY = 40, tileS = 92;
       const grad = ctx.createLinearGradient(tileX, tileY, tileX + tileS, tileY + tileS);
       grad.addColorStop(0, '#00A878'); grad.addColorStop(1, '#00C2A0');
       ctx.fillStyle = grad;
       roundRect(ctx, tileX, tileY, tileS, tileS, 22); ctx.fill();
-      // simple washer glyph
       ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 7; ctx.lineCap = 'round';
       roundRect(ctx, tileX+24, tileY+20, tileS-48, tileS-40, 8); ctx.stroke();
       ctx.beginPath(); ctx.arc(W/2, tileY+tileS/2+4, 17, 0, Math.PI*2); ctx.stroke();
       ctx.beginPath(); ctx.arc(W/2, tileY+tileS/2+4, 6, 0, Math.PI*2); ctx.stroke();
 
-      // Title
       ctx.fillStyle = '#141820';
       ctx.textAlign = 'center';
       ctx.font = '700 42px "Space Grotesk", sans-serif';
       ctx.fillText('Bayview Laundry', W/2, 210);
 
-      // Subtitle
       ctx.fillStyle = '#9AA3B5';
       ctx.font = '400 22px "Space Grotesk", sans-serif';
       ctx.fillText('Scan the QR code to check', W/2, 246);
       ctx.fillText('live machine availability.', W/2, 274);
 
-      // QR
       const qrSize = 300, qrX = W/2 - qrSize/2, qrY = 300;
       ctx.fillStyle = '#FFFFFF';
       roundRect(ctx, qrX-14, qrY-14, qrSize+28, qrSize+28, 16); ctx.fill();
@@ -712,12 +789,10 @@ function LaundryScene({ machineState }) {
         } catch(e) { console.warn('QR draw failed', e); }
       }
 
-      // Link
       ctx.fillStyle = '#00A878';
       ctx.font = '500 24px "IBM Plex Mono", monospace';
       ctx.fillText('bayviewlaundry.netlify.app', W/2, qrY + qrSize + 60);
 
-      // Footer
       ctx.fillStyle = '#9AA3B5';
       ctx.font = '400 18px "Space Grotesk", sans-serif';
       ctx.fillText('No app required · scan with your camera', W/2, qrY + qrSize + 96);
@@ -741,7 +816,6 @@ function LaundryScene({ machineState }) {
     const posterData = makePosterTexture();
     const posterMat = new THREE.MeshBasicMaterial({ map: posterData.tex, transparent: true });
 
-    // If the QR lib wasn't ready at first draw, redraw once it loads
     if (!window.qrcode) {
       let qrTries = 0;
       const qrPoll = setInterval(() => {
@@ -755,23 +829,19 @@ function LaundryScene({ machineState }) {
         }
       }, 150);
     }
-    // Plane sized realistically — a small poster on the wall
     const posterW = 0.76, posterH = 0.76 * 1.3;
     const posterMesh = new THREE.Mesh(new THREE.PlaneGeometry(posterW, posterH), posterMat);
-    // Mount on the inner face of the left wall (wall at x=-3.0, inner face ~-2.94)
     posterMesh.position.set(-2.93, 1.3, 0.1);
-    posterMesh.rotation.y = Math.PI / 2;   // face into the room (+x)
+    posterMesh.rotation.y = Math.PI / 2;
     posterMesh.name = 'wallPoster';
     scene.add(posterMesh);
 
-    // Thin frame behind for a mounted look
     const frameMat = new THREE.MeshBasicMaterial({ color: 0xD8DBE6 });
     const frameMesh = new THREE.Mesh(new THREE.PlaneGeometry(posterW + 0.04, posterH + 0.04), frameMat);
     frameMesh.position.set(-2.935, 1.3, 0.1);
     frameMesh.rotation.y = Math.PI / 2;
     scene.add(frameMesh);
 
-    // Redraw once web fonts are ready so canvas text uses the right typefaces
     if (document.fonts && document.fonts.ready) {
       document.fonts.ready.then(() => {
         const fresh = makePosterTexture();
@@ -780,7 +850,6 @@ function LaundryScene({ machineState }) {
       }).catch(() => {});
     }
 
-    // Green scan sweep bar (hidden until a scan plays)
     const scanMat = new THREE.MeshBasicMaterial({ color: 0x00C48C, transparent: true, opacity: 0.55 });
     const scanMesh = new THREE.Mesh(new THREE.PlaneGeometry(posterW * 0.6, 0.045), scanMat);
     scanMesh.position.set(-2.925, 1.3, 0.1);
@@ -803,7 +872,6 @@ function LaundryScene({ machineState }) {
     basket.position.set(3.6, 0.26, 2.7);
     basket.castShadow = true;
     scene.add(basket);
-    // basket rim
     const rimMat = new THREE.MeshLambertMaterial({ color: 0xB0B8CC });
     const rim = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.025, 6, 18), rimMat);
     rim.rotation.x = Math.PI / 2;
@@ -834,14 +902,11 @@ function LaundryScene({ machineState }) {
       const color  = STATUS_COLORS[status];
       const group  = new THREE.Group();
 
-      // Position: washers near back wall (z=-1.8), dryers pushed toward front edge (z=2.7)
       const x = col === 0 ? -1.1 : 2.5;
       const z = row === 0 ? -1.8 :  2.7;
       group.position.set(x, 0, z);
-      // Dryers face the washers (rotate 180°)
       if (row === 1) group.rotation.y = Math.PI;
 
-      // Body
       const bodyMat = new THREE.MeshLambertMaterial({ color: 0xF7F8FC });
       const body = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.0, 1.2), bodyMat);
       body.position.y = 0.5;
@@ -849,40 +914,34 @@ function LaundryScene({ machineState }) {
       body.receiveShadow = true;
       group.add(body);
 
-      // Top panel (slightly darker)
       const topMat = new THREE.MeshLambertMaterial({ color: 0xECEEF5 });
       const top = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.06, 1.2), topMat);
       top.position.y = 1.03;
       group.add(top);
 
-      // Front face colour strip
       const stripMat = new THREE.MeshLambertMaterial({ color });
       const strip = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.07, 0.02), stripMat);
       strip.position.set(0, 0.97, 0.61);
       group.add(strip);
 
-      // Door porthole (circle approximated by cylinder)
       const doorRingMat = new THREE.MeshLambertMaterial({ color: 0xD0D4DF });
       const doorRing = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.04, 24), doorRingMat);
       doorRing.rotation.x = Math.PI / 2;
       doorRing.position.set(0, 0.48, 0.62);
       group.add(doorRing);
 
-      // Drum (inner spinning part)
       const drumMat = new THREE.MeshLambertMaterial({ color: 0xB8BDD0 });
       const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.05, 20), drumMat);
       drum.rotation.x = Math.PI / 2;
       drum.position.set(0, 0.48, 0.635);
       group.add(drum);
 
-      // Drum inner glow disc
       const glowMat = new THREE.MeshLambertMaterial({ color: GLOW_COLORS[status], transparent: true, opacity: status === 'available' ? 0.35 : 0.75 });
       const glowDisc = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.01, 20), glowMat);
       glowDisc.rotation.x = Math.PI / 2;
       glowDisc.position.set(0, 0.48, 0.645);
       group.add(glowDisc);
 
-      // Control panel buttons (top right of front face)
       const btnColors = [0x00A878, 0x4F8EF7, 0xD97706];
       btnColors.forEach((bc, bi) => {
         const btn = new THREE.Mesh(
@@ -894,18 +953,15 @@ function LaundryScene({ machineState }) {
         group.add(btn);
       });
 
-      // Status indicator LED
       const ledMat = new THREE.MeshLambertMaterial({ color: GLOW_COLORS[status], emissive: GLOW_COLORS[status], emissiveIntensity: 0.8 });
       const led = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 8), ledMat);
       led.position.set(-0.45, 0.82, 0.615);
       group.add(led);
 
-      // Point light for glow effect
       const pointLight = new THREE.PointLight(GLOW_COLORS[status], status === 'in-use' ? 0.8 : 0.2, 2.5);
       pointLight.position.set(0, 0.5, 0.8);
       group.add(pointLight);
 
-      // Anchor point above the machine for the floating status card
       const cardAnchor = new THREE.Object3D();
       cardAnchor.position.set(0, 1.55, 0);
       group.add(cardAnchor);
@@ -914,15 +970,13 @@ function LaundryScene({ machineState }) {
       machines[id] = { group, drum, glowDisc, led, ledMat, glowMat, stripMat, strip, pointLight, status, cardAnchor, baseY: group.position.y };
     });
 
-    // Store refs
     sceneRef.current = { renderer, scene, camera, machines, posterMesh, scanMesh, posterBounds: { posterW, posterH } };
 
     // ── Animation loop ──
     let frameId;
     let t = 0;
-    // ── Poster scan animation + click-to-open ──
     let scanActive = false, scanStart = 0;
-    const posterTopY = 1.3 + posterH/2;   // world-space top of poster
+    const posterTopY = 1.3 + posterH/2;
     const posterBotY = 1.3 - posterH/2;
 
     function startScan() {
@@ -944,7 +998,6 @@ function LaundryScene({ machineState }) {
       if (hits.length > 0) startScan();
     }
     el.addEventListener('click', onCanvasClick);
-    // Hover cursor when over the poster
     function onCanvasMove(ev) {
       const rect = el.getBoundingClientRect();
       ndc.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
@@ -959,14 +1012,12 @@ function LaundryScene({ machineState }) {
       frameId = requestAnimationFrame(animate);
       t += 0.016;
 
-      // Scan sweep
       if (scanActive) {
         const elapsed = performance.now() - scanStart;
         const dur = 1150;
         const p = Math.min(1, elapsed / dur);
-        // sweep from top to bottom
         scanMesh.position.y = posterTopY - (posterTopY - posterBotY) * p;
-        scanMat.opacity = 0.55 * Math.sin(p * Math.PI); // fade in/out
+        scanMat.opacity = 0.55 * Math.sin(p * Math.PI);
         if (p >= 1) {
           scanActive = false;
           scanMesh.visible = false;
@@ -976,24 +1027,18 @@ function LaundryScene({ machineState }) {
       }
       Object.entries(machines).forEach(([id, m]) => {
         if (m.status === 'in-use') {
-          // Dance hop — bouncy vertical bob with a touch of squash/stretch,
-          // each machine offset slightly so they don't all hop in sync.
           const hopT = t * 5 + (m.group.position.x + m.group.position.z) * 2;
           const hop = Math.max(0, Math.sin(hopT));
-          const hopHeight = hop * hop * 0.16; // ease the peak, subtle height
+          const hopHeight = hop * hop * 0.16;
           m.group.position.y = m.baseY + hopHeight;
           const squash = 1 - hop * 0.05;
           m.group.scale.set(1 + (1 - squash) * 0.6, squash, 1 + (1 - squash) * 0.6);
-          // Pulse point light
           m.pointLight.intensity = 0.6 + Math.sin(t * 3) * 0.3;
-          // Pulse LED
           m.ledMat.emissiveIntensity = 0.6 + Math.sin(t * 4) * 0.4;
         } else if (m.status === 'out-of-order') {
-          // Slow amber pulse
           m.pointLight.intensity = 0.15 + Math.sin(t * 1.5) * 0.1;
           m.ledMat.emissiveIntensity = 0.4 + Math.sin(t * 2) * 0.3;
         } else {
-          // Ensure machine rests flat when not in-use
           m.group.position.y = m.baseY;
           m.group.scale.set(1, 1, 1);
         }
@@ -1001,7 +1046,6 @@ function LaundryScene({ machineState }) {
 
       renderer.render(scene, camera);
 
-      // Project card anchors to screen space (throttled to ~20fps for perf)
       if (t - lastProjUpdate > 0.05) {
         lastProjUpdate = t;
         const rect = el.getBoundingClientRect();
@@ -1020,9 +1064,6 @@ function LaundryScene({ machineState }) {
     }
     animate();
 
-    // Resize handler — ResizeObserver catches container size changes
-    // (orientation change, breakpoint shifts, card resize) more reliably than
-    // window resize alone, which can miss layout shifts on mobile.
     function onResize() {
       const { w, h } = getSize();
       if (w === 0 || h === 0) return;
@@ -1035,7 +1076,6 @@ function LaundryScene({ machineState }) {
     resizeObserver.observe(el);
     window.addEventListener('resize', onResize);
     window.addEventListener('orientationchange', onResize);
-    // Re-check shortly after mount in case the initial layout pass raced us
     const settleTimer = setTimeout(onResize, 150);
 
     return () => {
@@ -1048,9 +1088,8 @@ function LaundryScene({ machineState }) {
       el.removeEventListener('mousemove', onCanvasMove);
       renderer.dispose();
     };
-  }, []); // mount once
+  }, []);
 
-  // Update machine colours/status reactively without rebuilding scene
   useEffect(() => {
     const { machines } = sceneRef.current;
     if (!machines) return;
@@ -1107,8 +1146,7 @@ function LaundryScene({ machineState }) {
 
 const LAUNDRY_URL = "https://bayviewlaundry.netlify.app";
 
-// ── Mini floating status card (glassmorphic, mirrors the laundry app cards) ──
-// Fixed height always — no timer inside, so it never changes size during a cycle.
+// ── Mini floating status card ──
 function MiniMachineCard({ label, status, pos }) {
   if (!pos) return null;
 
@@ -1133,10 +1171,7 @@ function MiniMachineCard({ label, status, pos }) {
   );
 }
 
-// ── Mini ring timer card (glassmorphic, sits to the right of the status card) ──
-// Mirrors the exact ring + countdown treatment from the main laundry app's
-// MachineCard, shown under the exact same condition the laundry app uses:
-// status === 'in-use' && endsAt && endsAt > now.
+// ── Mini ring timer card ──
 function RingTimerCard({ data, pos }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -1182,8 +1217,114 @@ function RingTimerCard({ data, pos }) {
   );
 }
 
+// ── User Weekly History panel ──
+// Derived entirely from the analytics/users/{date}/{userId} records already in
+// state (usersByDate) plus the excludedUsers set. No new listeners, no writes.
+// Each week is bucketed Monday→Sunday; a user's "first ever seen" date decides
+// whether a visit in a given week counts as New or Returning.
+function WeeklyHistory({ usersByDate, excludedSet }) {
+  const WEEKS = 8;
+  const weeks = getLastNWeeks(WEEKS);
+  const thisWeekKey = weeks[weeks.length - 1].key;
+
+  // First-ever-seen date per user (chronological scan, excluded devices skipped).
+  const firstSeen = {};
+  Object.keys(usersByDate || {}).sort().forEach(date => {
+    Object.keys(usersByDate[date] || {}).forEach(u => {
+      if (excludedSet.has(u)) return;
+      if (!(u in firstSeen)) firstSeen[u] = date;
+    });
+  });
+
+  // For each week, collect the unique users active in it, split New vs Returning.
+  const weekData = weeks.map(w => {
+    const users = new Set();
+    Object.keys(usersByDate || {}).forEach(date => {
+      const dk = mondayKeyOf(parseDateKey(date));
+      if (dk !== w.key) return;
+      Object.keys(usersByDate[date] || {}).forEach(u => {
+        if (!excludedSet.has(u)) users.add(u);
+      });
+    });
+    let nw = 0;
+    users.forEach(u => {
+      // New if the user's first-ever-seen date falls inside this week.
+      if (firstSeen[u] && mondayKeyOf(parseDateKey(firstSeen[u])) === w.key) nw++;
+    });
+    const total = users.size;
+    return { ...w, total, nw, ret: total - nw, isNow: w.key === thisWeekKey };
+  });
+
+  // Hide empty leading weeks — only show from the first week that had any
+  // activity onward. The current (in-progress) week is always kept so a fresh
+  // week still appears. Keeps a young app from showing blank columns.
+  const firstActive = weekData.findIndex(w => w.total > 0);
+  const startIdx = firstActive === -1 ? weekData.length - 1 : firstActive;
+  const visibleWeeks = weekData.slice(startIdx);
+
+  const maxTotal = Math.max(1, ...visibleWeeks.map(w => w.total));
+
+  // Return-rate trend: % of a week's users who were returning (not first-timers).
+  const rate = w => (w.total ? Math.round((w.ret / w.total) * 100) : 0);
+  const completed = visibleWeeks.filter(w => !w.isNow);
+  const thisWeek = visibleWeeks[visibleWeeks.length - 1];
+  const lastWeek = completed[completed.length - 1];
+  const thisRate = rate(thisWeek);
+  const lastRate = lastWeek ? rate(lastWeek) : 0;
+  const deltaPts = thisRate - lastRate;
+
+  return (
+    <div className="panel">
+      <div className="panel-title-row">
+        <div className="panel-title">User Weekly History</div>
+        <span className="panel-note">{visibleWeeks.length === 1 ? 'this week' : `${visibleWeeks.length} weeks`}</span>
+      </div>
+
+      <div className="wk-chart">
+        {visibleWeeks.map(w => {
+          const stackH = (w.total / maxTotal) * 100;
+          const newH = w.total ? (w.nw / w.total) * 100 : 0;
+          const retH = w.total ? (w.ret / w.total) * 100 : 0;
+          return (
+            <div className={`wk-col${w.isNow ? ' now' : ''}`} key={w.key}>
+              <span className="wk-total">{w.total}</span>
+              <div className="wk-stack" style={{ height: `${stackH}%` }}>
+                <div className="wk-new" style={{ height: `${newH}%` }}/>
+                <div className="wk-ret" style={{ height: `${retH}%` }}/>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="wk-axis">
+        {visibleWeeks.map(w => <span key={w.key}>{w.label}</span>)}
+      </div>
+
+      <div className="stack-legend">
+        <div className="legend-item"><div className="legend-dot" style={{background:'#C2C8D6'}}/> Returning</div>
+        <div className="legend-item"><div className="legend-dot" style={{background:'#00A878'}}/> New</div>
+        <div className="legend-item"><div className="legend-dot" style={{background:'#C2C8D6', opacity:0.45}}/> In progress</div>
+      </div>
+
+      <div className="users-footer">
+        <div>
+          <div className="users-footer-hero">{thisRate}<span>%</span></div>
+          <div className="users-footer-label">came back this week</div>
+        </div>
+        <div className="users-footer-divider"/>
+        <div>
+          <div className={`users-footer-alt ${deltaPts > 0 ? 'up' : ''}`} style={deltaPts > 0 ? {color:'var(--green)'} : {}}>
+            {deltaPts > 0 ? '+' : deltaPts < 0 ? '−' : ''}{Math.abs(deltaPts)}
+          </div>
+          <div className="users-footer-label">pts vs last week</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Mini 3D washing machine icon for the header ──
-// Exact replica of the washer model + camera angle used in the room scene below, static (no spin).
 function HeaderMachineIcon() {
   const mountRef = React.useRef(null);
 
@@ -1200,8 +1341,6 @@ function HeaderMachineIcon() {
 
     const scene = new THREE.Scene();
 
-    // Same isometric angle as the room scene (camera at (8,10,8) orbited 45°),
-    // just framed tightly on a single machine.
     const d = 1.05;
     const camera = new THREE.OrthographicCamera(-d, d, d, -d, 0.1, 20);
     const camRadius = Math.sqrt(8*8 + 8*8);
@@ -1219,7 +1358,6 @@ function HeaderMachineIcon() {
     fillLight.position.set(-5, 5, -5);
     scene.add(fillLight);
 
-    // ── Exact replica of the room-scene washer (status: available / green) ──
     const group = new THREE.Group();
     scene.add(group);
 
@@ -1272,7 +1410,6 @@ function HeaderMachineIcon() {
     led.position.set(-0.45, 0.82, 0.615);
     group.add(led);
 
-    // Static render — single frame, no animation loop needed
     renderer.render(scene, camera);
 
     return () => {
@@ -1293,8 +1430,6 @@ function Dashboard() {
   const [loading,    setLoading]    = useState(true);
   const [lastUpdate, setLastUpdate] = useState(null);
 
-  // Live subscriptions — every panel updates the moment Firebase pushes new
-  // data, mirroring the resident app's onValue() pattern. No manual refresh.
   useEffect(() => {
     const unsubs = [];
 
@@ -1312,13 +1447,8 @@ function Dashboard() {
     });
     listen('analytics/totals', v => setData(d => ({ ...d, totals: v || {} })));
     listen('analytics/daily',  v => setData(d => ({ ...d, daily:  v || {} })));
-    // Raw per-day user records + exclusion list — all user metrics are derived
-    // from these (the uniqueUsers counters double-count across days, so they
-    // are no longer trusted for display).
     listen('analytics/users', v => setData(d => ({ ...d, usersByDate: v || {} })));
     listen('excludedUsers',   v => setData(d => ({ ...d, excluded:   v || {} })));
-    // Subscribe to the whole hourly node (tiny at this scale) so the listener
-    // survives the midnight date rollover without needing to re-attach.
     listen('analytics/hourly', v => setData(d => ({ ...d, hourlyAll: v || {} })));
     listen('feedback', v => setData(d => ({
       ...d,
@@ -1336,8 +1466,6 @@ function Dashboard() {
   const hourly = hourlyAll?.[getTodayKey()] || {};
   const days7  = getLast7Days();
 
-  // ── User metrics — derived from analytics/users/{date}/{userId} records,
-  //    filtered against excludedUsers. Counters are ignored for these.
   const excludedSet = new Set(Object.keys(excluded || {}));
   const firstSeen = {};
   Object.keys(usersByDate || {}).sort().forEach(date => {
@@ -1358,7 +1486,6 @@ function Dashboard() {
   const yesterdayKey = `${yd.getFullYear()}-${String(yd.getMonth()+1).padStart(2,'0')}-${String(yd.getDate()).padStart(2,'0')}`;
   const deltaToday = todayStats.total - dayUserStats(yesterdayKey).total;
 
-  // Stickiness — % of this week's users seen on 2+ days
   const weekSeen = {};
   days7.forEach(({ key }) => {
     Object.keys(usersByDate?.[key] || {}).forEach(u => {
@@ -1545,6 +1672,11 @@ function Dashboard() {
               })}
             </div>
           </div>
+        </div>
+
+        {/* ── User Weekly History ── */}
+        <div>
+          <WeeklyHistory usersByDate={usersByDate} excludedSet={excludedSet}/>
         </div>
 
         {/* ── Feedback row ── */}
