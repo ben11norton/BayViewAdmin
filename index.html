@@ -513,30 +513,40 @@
 <body>
 <div id="root"></div>
 
+<script type="module">
+  const FIREBASE_CONFIG = {
+    apiKey: "AIzaSyCsh-8p7ITozw-E1fbezr9ORMBXK-coDR8",
+    authDomain: "bayview-laundry.firebaseapp.com",
+    databaseURL: "https://bayview-laundry-default-rtdb.firebaseio.com",
+    projectId: "bayview-laundry",
+    storageBucket: "bayview-laundry.firebasestorage.app",
+    messagingSenderId: "204674191712",
+    appId: "1:204674191712:web:f46ffa5b31e4c843198e05"
+  };
+
+  window.__bvFirebaseReady = (async () => {
+    const { initializeApp, getApps } = await import("https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js");
+    const db = await import("https://www.gstatic.com/firebasejs/12.15.0/firebase-database.js");
+    const apps = getApps();
+    const app = apps.length ? apps[0] : initializeApp(FIREBASE_CONFIG);
+    window.__bvFbDb      = db.getDatabase(app);
+    window.__bvFbGet     = db.get;
+    window.__bvFbRef     = db.ref;
+    window.__bvFbOnValue = db.onValue;
+  })();
+</script>
+
 <script type="text/babel">
 const { useState, useEffect, useCallback } = React;
-
-const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyCsh-8p7ITozw-E1fbezr9ORMBXK-coDR8",
-  authDomain: "bayview-laundry.firebaseapp.com",
-  databaseURL: "https://bayview-laundry-default-rtdb.firebaseio.com",
-  projectId: "bayview-laundry",
-  storageBucket: "bayview-laundry.firebasestorage.app",
-  messagingSenderId: "204674191712",
-  appId: "1:204674191712:web:f46ffa5b31e4c843198e05"
-};
 
 let fbDb, fbGet, fbRef, fbOnValue;
 
 async function initFirebase() {
-  const { initializeApp, getApps } = await import("https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js");
-  const db = await import("https://www.gstatic.com/firebasejs/12.15.0/firebase-database.js");
-  const apps = getApps();
-  const app = apps.length ? apps[0] : initializeApp(FIREBASE_CONFIG);
-  fbDb      = db.getDatabase(app);
-  fbGet     = db.get;
-  fbRef     = db.ref;
-  fbOnValue = db.onValue;
+  await window.__bvFirebaseReady;
+  fbDb      = window.__bvFbDb;
+  fbGet     = window.__bvFbGet;
+  fbRef     = window.__bvFbRef;
+  fbOnValue = window.__bvFbOnValue;
 }
 
 function getTodayKey() {
